@@ -57,6 +57,13 @@
       "when": 1789702907862,
       "tag": "0007_20260916201432_1842f061_c691_4284_9971_6da23997dc53",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1789702919475,
+      "tag": "0008_gemini_key_pool",
+      "breakpoints": true
     }
   ]
 }
