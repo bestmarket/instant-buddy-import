@@ -326,7 +326,11 @@ export async function generateSceneImage(prompt: string): Promise<Uint8Array> {
     const googleKey = provider.apiKey ?? process.env["GOOGLE_API_KEY"] ?? null;
     if (provider.id === "gemini-image") {
       const { withGeminiKey } = await import("./geminiKeys.server");
-      bytes = await withGeminiKey(googleKey, (key) => geminiImage(key, prompt));
+      bytes = await withGeminiKey(
+        googleKey,
+        (key) => geminiImage(key, prompt),
+        () => gatewayImage(prompt),
+      );
     }
     else if (provider.id === "pollinations") bytes = await pollinationsImage(prompt);
     else if (provider.id === "huggingface" && provider.apiKey)
