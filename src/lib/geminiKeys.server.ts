@@ -80,9 +80,14 @@ export async function markGeminiKeyFailure(apiKey: string) {
 export async function withGeminiKey<T>(
   fallbackKey: string | null | undefined,
   call: (key: string) => Promise<T>,
+  /** Used when the pool is empty, so the app keeps working before keys are added. */
+  onNoKeys?: () => Promise<T>,
 ): Promise<T> {
   const keys = await geminiKeyRotation(fallbackKey);
-  if (keys.length === 0) throw new Error("No Google Gemini API key has been added yet.");
+  if (keys.length === 0) {
+    if (onNoKeys) return onNoKeys();
+    throw new Error("No Google Gemini API key has been added yet.");
+  }
   let lastError: unknown;
   for (const key of keys) {
     try {
