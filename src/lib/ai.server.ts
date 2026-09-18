@@ -155,8 +155,10 @@ export async function askAI(
       text = await claudeText(provider.apiKey, system, prompt);
     } else if (provider.id === "gemini-flash") {
       const { withGeminiKey } = await import("./geminiKeys.server");
-      text = await withGeminiKey(provider.apiKey ?? process.env["GOOGLE_API_KEY"] ?? null, (key) =>
-        geminiText(key, system, prompt),
+      text = await withGeminiKey(
+        provider.apiKey ?? process.env["GOOGLE_API_KEY"] ?? null,
+        (key) => geminiText(key, system, prompt),
+        () => gatewayText(system, prompt, reasoning),
       );
     } else {
       text = await gatewayText(system, prompt, reasoning);
@@ -324,7 +326,11 @@ export async function generateSceneImage(prompt: string): Promise<Uint8Array> {
     const googleKey = provider.apiKey ?? process.env["GOOGLE_API_KEY"] ?? null;
     if (provider.id === "gemini-image") {
       const { withGeminiKey } = await import("./geminiKeys.server");
-      bytes = await withGeminiKey(googleKey, (key) => geminiImage(key, prompt));
+      bytes = await withGeminiKey(
+        googleKey,
+        (key) => geminiImage(key, prompt),
+        () => gatewayImage(prompt),
+      );
     }
     else if (provider.id === "pollinations") bytes = await pollinationsImage(prompt);
     else if (provider.id === "huggingface" && provider.apiKey)
@@ -418,11 +424,47 @@ async function elevenLabsNarration(
   return pcmToWav(pcm, 24000);
 }
 
+/** Google Gemini 2.5 Flash TTS called directly with a pooled key. */
+async function geminiNarration(
+  key: string,
+  text: string,
+  voice: string,
+  direction: string,
+): Promise<Uint8Array> {
+  const res = await fetch(
+    "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-tts:generateContent",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": key },
+      body: JSON.stringify({
+        contents: [{ role: "user", parts: [{ text: `Read this aloud, ${direction}:\n\n${text}` }] }],
+        generationConfig: {
+          responseModalities: ["AUDIO"],
+          speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } },
+        },
+      }),
+    },
+  );
+  if (!res.ok) throw await gatewayError(res);
+  const body = (await res.json()) as {
+    candidates?: Array<{
+      content?: {
+        parts?: Array<{ inlineData?: { data?: string }; inline_data?: { data?: string } }>;
+      };
+    }>;
+  };
+  for (const part of body.candidates?.[0]?.content?.parts ?? []) {
+    const data = part.inlineData?.data ?? part.inline_data?.data;
+    if (data) return pcmToWav(base64ToBytes(data), 24000);
+  }
+  throw new Error("The narration could not be generated.");
+}
+
 /**
  * Generates narration audio (WAV) in the voice the person picked in the
- * production layout. Free Edge/Kokoro voices are served by the built-in
- * zero-cost voice engine (they need a local runtime that isn't available
- * here); a saved ElevenLabs key upgrades the same voice picks.
+ * production layout. Gemini keys in the admin pool narrate by default;
+ * a saved ElevenLabs key upgrades the same voice picks, and the built-in
+ * engine covers the app before any key is added.
  */
 export async function generateNarration(text: string, voice: string): Promise<Uint8Array> {
   const provider = await resolveProvider("tts");
@@ -432,6 +474,13 @@ export async function generateNarration(text: string, voice: string): Promise<Ui
     let bytes: Uint8Array;
     if (provider.id === "elevenlabs" && provider.apiKey) {
       bytes = await elevenLabsNarration(provider.apiKey, text, picked.elevenId);
+    } else if (provider.id === "gemini-tts") {
+      const { withGeminiKey } = await import("./geminiKeys.server");
+      bytes = await withGeminiKey(
+        provider.apiKey ?? process.env["GOOGLE_API_KEY"] ?? null,
+        (key) => geminiNarration(key, text, picked.gatewayVoice, picked.direction),
+        () => gatewayNarration(text, picked.gatewayVoice, picked.direction),
+      );
     } else {
       bytes = await gatewayNarration(text, picked.gatewayVoice, picked.direction);
     }
