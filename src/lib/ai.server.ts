@@ -155,8 +155,10 @@ export async function askAI(
       text = await claudeText(provider.apiKey, system, prompt);
     } else if (provider.id === "gemini-flash") {
       const { withGeminiKey } = await import("./geminiKeys.server");
-      text = await withGeminiKey(provider.apiKey ?? process.env["GOOGLE_API_KEY"] ?? null, (key) =>
-        geminiText(key, system, prompt),
+      text = await withGeminiKey(
+        provider.apiKey ?? process.env["GOOGLE_API_KEY"] ?? null,
+        (key) => geminiText(key, system, prompt),
+        () => gatewayText(system, prompt, reasoning),
       );
     } else {
       text = await gatewayText(system, prompt, reasoning);
